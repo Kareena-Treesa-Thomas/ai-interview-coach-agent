@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Interview Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+<div class="console">
+
+  <!-- ===== Header: studio strip ===== -->
+  <header class="strip">
+    <div class="strip-left">
+      <span class="dot" id="statusDot"></span>
+      <span class="strip-label" id="statusLabel">STANDBY</span>
+    </div>
+    <div class="strip-title">INTERVIEW CONSOLE</div>
+    <div class="strip-right">
+      <span class="strip-label mono" id="questionCounter">— / 5</span>
+    </div>
+  </header>
+
+  <!-- ===== Screen 1: Setup ===== -->
+  <section class="screen" id="screen-setup" data-active="true">
+    <div class="setup-grid">
+
+      <div class="setup-copy">
+        <p class="eyebrow">Before we go on air</p>
+        <h1>Feed the console<br>your materials.</h1>
+        <p class="lede">Upload your resume and the job description. The console reads both, then tailors every question to the gap between them.</p>
+      </div>
+
+      <div class="setup-panels">
+        <div class="input-panel" id="panel-resume">
+          <div class="panel-head">
+            <span class="panel-index">RESUME</span>
+            <span class="panel-state" data-state="pending">not loaded</span>
+          </div>
+          <label class="drop" for="resumeFile">
+            <span class="drop-icon">↑</span>
+            <span class="drop-text">Drop file or click to browse</span>
+            <span class="drop-hint">image or photographed page</span>
+          </label>
+          <input type="file" id="resumeFile" accept="image/*" hidden />
+          <button class="btn-primary small index-btn" id="indexResumeBtn" disabled>
+            <span>Index Resume</span>
+          </button>
+        </div>
+
+        <div class="input-panel" id="panel-jd">
+          <div class="panel-head">
+            <span class="panel-index">JOB DESCRIPTION</span>
+            <span class="panel-state" data-state="pending">not loaded</span>
+          </div>
+          <textarea id="jdText" placeholder="Paste the job description here..."></textarea>
+          <div class="or-row"><span>or</span></div>
+          <label class="drop small" for="jdFile">
+            <span class="drop-icon">↑</span>
+            <span class="drop-text">Upload as image instead</span>
+          </label>
+          <input type="file" id="jdFile" accept="image/*" hidden />
+          <button class="btn-primary small index-btn" id="indexJdBtn" disabled>
+            <span>Index Job Description</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-primary" id="startBtn" disabled>
+      <span>Start Interview</span>
+      <span class="btn-arrow">→</span>
+    </button>
+  </section>
+
+  <!-- ===== Screen 2: Live session ===== -->
+  <section class="screen" id="screen-session" data-active="false">
+    <div class="session-grid">
+
+      <!-- Left rail: progress -->
+      <aside class="rail">
+        <p class="rail-title">SESSION MAP</p>
+        <ol class="rail-list" id="railList"></ol>
+
+        <p class="rail-title rail-title-spaced">WEAK SIGNAL</p>
+        <div class="signal-meter">
+          <div class="signal-fill" id="signalFill"></div>
+        </div>
+        <p class="signal-caption" id="signalCaption">gathering data…</p>
+        <div class="signal-legend" aria-label="Signal strength legend">
+          <span class="signal-chip" data-signal="weak" id="signalWeak">Weak · 0–3.9</span>
+          <span class="signal-chip" data-signal="medium" id="signalMedium">Medium · 4–5.9</span>
+          <span class="signal-chip" data-signal="strong" id="signalStrong">Strong · 6–10</span>
+        </div>
+      </aside>
+
+      <!-- Center stage -->
+      <div class="stage">
+        <div class="q-stepper" id="qStepper"></div>
+
+        <div class="question-card">
+          <p class="q-topic" id="qTopic">—</p>
+          <h2 class="q-text" id="qText">Preparing your first question…</h2>
+          <button class="btn-ghost" id="replayBtn" title="Replay question audio">
+            <span class="replay-icon">▶</span> Replay
+          </button>
+        </div>
+
+        <div class="waveform-wrap">
+          <canvas id="waveform" width="800" height="120"></canvas>
+        </div>
+
+        <div class="mic-row">
+          <button class="mic-btn" id="micBtn">
+            <span class="mic-core"></span>
+          </button>
+          <p class="mic-caption" id="micCaption">Tap to answer</p>
+        </div>
+
+        <!-- Feedback appears after each answer -->
+        <div class="feedback-card" id="feedbackCard" hidden>
+          <div class="feedback-scores">
+            <div class="score-block">
+              <span class="score-label">CONTENT</span>
+              <span class="score-value" id="scoreContent">—</span>
+            </div>
+            <div class="score-block">
+              <span class="score-label">DELIVERY</span>
+              <span class="score-value" id="scoreDelivery">—</span>
+            </div>
+            <div class="score-block">
+              <span class="score-label">CEFR LEVEL</span>
+              <span class="score-value cefr" id="scoreCEFR">—</span>
+            </div>
+          </div>
+          <p class="feedback-meta" id="feedbackMeta"></p>
+          <p class="feedback-text" id="feedbackText"></p>
+          <p class="transcript-text" id="transcriptText"></p>
+          <button class="btn-primary small" id="nextBtn">Next question →</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Screen 3: Summary ===== -->
+  <section class="screen" id="screen-summary" data-active="false">
+    <p class="eyebrow center">Session closed</p>
+    <h1 class="center">Your debrief.</h1>
+
+    <div class="summary-grid">
+      <div class="summary-col">
+        <p class="summary-label">STRENGTHS</p>
+        <ul class="summary-list strengths" id="strengthsList"></ul>
+      </div>
+      <div class="summary-col">
+        <p class="summary-label">WEAK AREAS</p>
+        <ul class="summary-list weak" id="weakList"></ul>
+      </div>
+      <div class="summary-col">
+        <p class="summary-label">FOCUS NEXT</p>
+        <ul class="summary-list focus" id="focusList"></ul>
+      </div>
+    </div>
+
+    <p class="summary-label reviews-label">QUESTION-BY-QUESTION COACHING</p>
+    <div class="reviews-list" id="reviewsList"></div>
+
+    <div class="summary-actions">
+      <button class="btn-primary small" id="printBtn">
+        <span>Download PDF Report</span>
+        <span class="btn-arrow">⬇</span>
+      </button>
+      <button class="btn-ghost" id="restartBtn">Start a new session</button>
+    </div>
+  </section>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+flask==3.0.3
+flask-cors==4.0.1
+python-dotenv==1.0.1
+openai==1.40.0
+httpx<0.28
+azure-ai-vision-imageanalysis==1.0.0
+azure-cognitiveservices-speech==1.40.0
+azure-search-documents==11.5.1
+requests==2.32.3
