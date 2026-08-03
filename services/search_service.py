@@ -35,14 +35,13 @@ def ensure_index():
 
     fields = [
         SimpleField(name="id", type=SearchFieldDataType.String, key=True),
-        SimpleField(name="source", type=SearchFieldDataType.String, filterable=True),  # "resume" | "jd"
         SearchableField(name="content", type=SearchFieldDataType.String),
     ]
     index = SearchIndex(name=Config.SEARCH_INDEX_NAME, fields=fields)
     client.create_index(index)
 
 
-def _chunk_text(text: str, max_chars: int = 800):
+def _chunk_text(text: str, max_chars: int = 10000):
     words = text.split()
     chunks, current = [], []
     length = 0
@@ -61,7 +60,7 @@ def index_document(text: str, source: str):
     """source: 'resume' or 'jd'. Splits into chunks and uploads to the index."""
     client = _search_client()
     docs = [
-        {"id": str(uuid.uuid4()), "source": source, "content": chunk}
+        {"id": str(uuid.uuid4()), "content": chunk}
         for chunk in _chunk_text(text)
     ]
     if docs:
@@ -69,13 +68,12 @@ def index_document(text: str, source: str):
     return len(docs)
 
 
-def retrieve_context(query: str, source_filter: str = None, top: int = 3) -> list[str]:
+def retrieve_context(query: str, top: int = 3) -> list[str]:
     """
     Pulls the most relevant chunks for a given query (e.g. a topic like
     'React' or 'team leadership'). Used to ground question generation
     and answer evaluation.
     """
     client = _search_client()
-    filter_expr = f"source eq '{source_filter}'" if source_filter else None
-    results = client.search(search_text=query, filter=filter_expr, top=top)
+    results = client.search(search_text=query, top=top)
     return [r["content"] for r in results]

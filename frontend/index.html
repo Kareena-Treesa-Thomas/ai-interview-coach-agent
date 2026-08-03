@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 
@@ -46,6 +48,9 @@
             <span class="drop-hint">image or photographed page</span>
           </label>
           <input type="file" id="resumeFile" accept="image/*" hidden />
+          <button class="btn-primary small index-btn" id="indexResumeBtn" disabled>
+            <span>Index Resume</span>
+          </button>
         </div>
 
         <div class="input-panel" id="panel-jd">
@@ -60,6 +65,9 @@
             <span class="drop-text">Upload as image instead</span>
           </label>
           <input type="file" id="jdFile" accept="image/*" hidden />
+          <button class="btn-primary small index-btn" id="indexJdBtn" disabled>
+            <span>Index Job Description</span>
+          </button>
         </div>
       </div>
     </div>
@@ -84,10 +92,17 @@
           <div class="signal-fill" id="signalFill"></div>
         </div>
         <p class="signal-caption" id="signalCaption">gathering data…</p>
+        <div class="signal-legend" aria-label="Signal strength legend">
+          <span class="signal-chip" data-signal="weak" id="signalWeak">Weak · 0–3.9</span>
+          <span class="signal-chip" data-signal="medium" id="signalMedium">Medium · 4–5.9</span>
+          <span class="signal-chip" data-signal="strong" id="signalStrong">Strong · 6–10</span>
+        </div>
       </aside>
 
       <!-- Center stage -->
       <div class="stage">
+        <div class="q-stepper" id="qStepper"></div>
+
         <div class="question-card">
           <p class="q-topic" id="qTopic">—</p>
           <h2 class="q-text" id="qText">Preparing your first question…</h2>
@@ -118,7 +133,12 @@
               <span class="score-label">DELIVERY</span>
               <span class="score-value" id="scoreDelivery">—</span>
             </div>
+            <div class="score-block">
+              <span class="score-label">CEFR LEVEL</span>
+              <span class="score-value cefr" id="scoreCEFR">—</span>
+            </div>
           </div>
+          <p class="feedback-meta" id="feedbackMeta"></p>
           <p class="feedback-text" id="feedbackText"></p>
           <p class="transcript-text" id="transcriptText"></p>
           <button class="btn-primary small" id="nextBtn">Next question →</button>
@@ -147,7 +167,16 @@
       </div>
     </div>
 
-    <button class="btn-ghost center-btn" id="restartBtn">Start a new session</button>
+    <p class="summary-label reviews-label">QUESTION-BY-QUESTION COACHING</p>
+    <div class="reviews-list" id="reviewsList"></div>
+
+    <div class="summary-actions">
+      <button class="btn-primary small" id="printBtn">
+        <span>Download PDF Report</span>
+        <span class="btn-arrow">⬇</span>
+      </button>
+      <button class="btn-ghost" id="restartBtn">Start a new session</button>
+    </div>
   </section>
 
 </div>

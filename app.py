@@ -12,7 +12,6 @@ Flow:
 Session state is NOT stored server-side beyond a simple in-memory dict
 keyed by session_id (fine for a demo; swap for Redis/DB for real use).
 """
-import base64
 import io
 import uuid
 
@@ -32,6 +31,14 @@ def serve_frontend():
 
 # Demo-only in-memory session store: {session_id: {history: [], weak_areas: {}}}
 SESSIONS = {}
+
+TOPIC_ROTATION = [
+    "background & experience",
+    "core technical skills",
+    "system design",
+    "past projects",
+    "behavioral / teamwork",
+]
 
 
 @app.before_request
@@ -61,8 +68,17 @@ def upload_jd():
 @app.route("/start-session", methods=["POST"])
 def start_session():
     session_id = str(uuid.uuid4())
-    SESSIONS[session_id] = {"history": [], "weak_areas": {}}
+    SESSIONS[session_id] = {"history": [], "weak_areas": {}, "used_topics": []}
     return jsonify({"session_id": session_id})
+
+
+def _next_topic(session: dict) -> str:
+    used_topics = set(session.get("used_topics", []))
+    for topic in TOPIC_ROTATION:
+        if topic not in used_topics:
+            session.setdefault("used_topics", []).append(topic)
+            return topic
+    return TOPIC_ROTATION[-1]
 
 
 @app.route("/next-question", methods=["POST"])
@@ -71,19 +87,14 @@ def next_question():
     session_id = data["session_id"]
     session = SESSIONS[session_id]
 
-    topic = data.get("topic", "general background")
+    topic = data.get("topic") or _next_topic(session)
     difficulty = data.get("difficulty", "medium")
+    used_topics = session.setdefault("used_topics", [])
+    if topic not in used_topics and len(used_topics) < len(TOPIC_ROTATION):
+        used_topics.append(topic)
 
-    result = agent.run_agent_turn(
-        user_message=f"Give me the next question. Topic: {topic}, difficulty: {difficulty}.",
-        session=session,
-    )
-    question_text = result["function_result"]["question"]
-
-    audio_bytes = speech_service.text_to_speech_bytes(question_text)
-    audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
-
-    return jsonify({"question": question_text, "audio_base64": audio_b64})
+    question_text = agent.generate_next_question(topic=topic, difficulty=difficulty, session=session)
+    return jsonify({"question": question_text, "topic": topic, "level": difficulty})
 
 
 @app.route("/submit-answer", methods=["POST"])
@@ -94,6 +105,7 @@ def submit_answer():
     session_id = request.form["session_id"]
     question = request.form["question"]
     topic = request.form.get("topic", "general")
+    difficulty = request.form.get("difficulty", "medium")
     session = SESSIONS[session_id]
 
     audio_bytes = request.files["audio"].read()
@@ -111,17 +123,14 @@ def submit_answer():
     )
     scores = eval_result["function_result"]
 
-    # Update weak areas based on the content score
-    agent.run_agent_turn(
-        user_message=f"Update weak areas. Topic: {topic}, score: {scores.get('content_score', 5)}",
-        session=session,
-    )
+    # Update weak areas directly from the scored result to avoid a second fragile tool-call hop.
+    session.setdefault("weak_areas", {})[topic] = scores.get("content_score", 5)
 
     session["history"].append({
-        "question": question, "answer": answer_text, "topic": topic, **scores,
+        "question": question, "answer": answer_text, "topic": topic, "level": difficulty, **scores,
     })
 
-    return jsonify({"transcript": answer_text, **scores})
+    return jsonify({"transcript": answer_text, "topic": topic, "level": difficulty, **scores})
 
 
 @app.route("/summary", methods=["POST"])

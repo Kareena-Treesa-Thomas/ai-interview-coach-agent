@@ -13,6 +13,7 @@ const state = {
   jdLoaded: false,
   questionIndex: 0,
   currentTopic: "general background",
+  currentDifficulty: "medium",
   currentQuestion: "",
   weakAreas: {},          // topic -> latest content_score
   history: [],            // {topic, contentScore}
@@ -56,12 +57,25 @@ function maybeEnableStart() {
   $("startBtn").disabled = !(state.resumeLoaded && state.jdLoaded);
 }
 
-$("resumeFile").addEventListener("change", async (e) => {
+let stagedResumeFile = null;
+let stagedJdFile = null;
+let stagedJdText = "";
+
+$("resumeFile").addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
+  stagedResumeFile = file;
+  $("indexResumeBtn").disabled = false;
+  $(`panel-resume`).querySelector(".panel-state").dataset.state = "pending";
+  $(`panel-resume`).querySelector(".panel-state").textContent = `${file.name} ready — click Index`;
+});
+
+$("indexResumeBtn").addEventListener("click", async () => {
+  if (!stagedResumeFile) return;
   markPanelLoading("panel-resume");
+  $("indexResumeBtn").disabled = true;
   const form = new FormData();
-  form.append("file", file);
+  form.append("file", stagedResumeFile);
   try {
     const res = await fetch(`${API_BASE}/upload-resume`, { method: "POST", body: form });
     const data = await res.json();
@@ -70,50 +84,58 @@ $("resumeFile").addEventListener("change", async (e) => {
     maybeEnableStart();
   } catch (err) {
     markPanelLoaded("panel-resume", "failed — retry");
+    $("indexResumeBtn").disabled = false;
     console.error(err);
   }
 });
 
-$("jdFile").addEventListener("change", async (e) => {
+$("jdFile").addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
+  stagedJdFile = file;
+  stagedJdText = ""; // file takes precedence over any typed text
+  $("indexJdBtn").disabled = false;
+  $(`panel-jd`).querySelector(".panel-state").dataset.state = "pending";
+  $(`panel-jd`).querySelector(".panel-state").textContent = `${file.name} ready — click Index`;
+});
+
+$("jdText").addEventListener("input", (e) => {
+  const text = e.target.value.trim();
+  stagedJdText = text;
+  stagedJdFile = null; // typed text takes precedence over any staged file
+  $("indexJdBtn").disabled = text.length < 40;
+  if (text.length >= 40) {
+    $(`panel-jd`).querySelector(".panel-state").dataset.state = "pending";
+    $(`panel-jd`).querySelector(".panel-state").textContent = "text ready — click Index";
+  }
+});
+
+$("indexJdBtn").addEventListener("click", async () => {
+  if (!stagedJdFile && !stagedJdText) return;
   markPanelLoading("panel-jd");
-  const form = new FormData();
-  form.append("file", file);
+  $("indexJdBtn").disabled = true;
   try {
-    const res = await fetch(`${API_BASE}/upload-jd`, { method: "POST", body: form });
+    let res;
+    if (stagedJdFile) {
+      const form = new FormData();
+      form.append("file", stagedJdFile);
+      res = await fetch(`${API_BASE}/upload-jd`, { method: "POST", body: form });
+    } else {
+      res = await fetch(`${API_BASE}/upload-jd`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: stagedJdText }),
+      });
+    }
     const data = await res.json();
     markPanelLoaded("panel-jd", `${data.chunks_indexed} chunks indexed`);
     state.jdLoaded = true;
     maybeEnableStart();
   } catch (err) {
     markPanelLoaded("panel-jd", "failed — retry");
+    $("indexJdBtn").disabled = false;
     console.error(err);
   }
-});
-
-let jdDebounce;
-$("jdText").addEventListener("input", (e) => {
-  clearTimeout(jdDebounce);
-  const text = e.target.value.trim();
-  if (text.length < 40) return; // wait for meaningful content
-  jdDebounce = setTimeout(async () => {
-    markPanelLoading("panel-jd");
-    try {
-      const res = await fetch(`${API_BASE}/upload-jd`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-      const data = await res.json();
-      markPanelLoaded("panel-jd", `${data.chunks_indexed} chunks indexed`);
-      state.jdLoaded = true;
-      maybeEnableStart();
-    } catch (err) {
-      markPanelLoaded("panel-jd", "failed — retry");
-      console.error(err);
-    }
-  }, 700);
 });
 
 $("startBtn").addEventListener("click", async () => {
@@ -137,6 +159,71 @@ function buildRail() {
     li.innerHTML = `<span class="rail-dot"></span><span>Q${i + 1}</span>`;
     rail.appendChild(li);
   }
+  buildStepper();
+}
+
+function buildStepper() {
+  const stepper = $("qStepper");
+  stepper.innerHTML = "";
+  for (let i = 0; i < TOTAL_QUESTIONS; i++) {
+    const step = document.createElement("div");
+    step.className = "q-step";
+    step.dataset.current = i === 0 ? "true" : "false";
+    step.textContent = i + 1;
+    step.id = `qStep-${i}`;
+    stepper.appendChild(step);
+    if (i < TOTAL_QUESTIONS - 1) {
+      const connector = document.createElement("div");
+      connector.className = "q-connector";
+      stepper.appendChild(connector);
+    }
+  }
+}
+
+function scoreTier(score) {
+  if (score == null) return null;
+  return score >= 6 ? "high" : score >= 4 ? "mid" : "low";
+}
+
+function signalBand(score) {
+  if (score == null) return null;
+  return score >= 6 ? "strong" : score >= 4 ? "medium" : "weak";
+}
+
+function scoreToCEFR(score) {
+  if (score == null) return "—";
+  if (score < 3) return "A1";
+  if (score < 4) return "A2";
+  if (score < 6) return "B1";
+  return "B2";
+}
+
+function signalAdvice(band, gap, feedback) {
+  const cleanGap = (gap || "").trim();
+  const cleanFeedback = (feedback || "").trim();
+
+  if (band === "strong") {
+    return cleanGap ? `strong signal · keep doing: ${cleanGap}` : "strong signal · keep doing what works";
+  }
+  if (band === "medium") {
+    return cleanGap ? `medium signal · improve: ${cleanGap}` : "medium signal · improve structure and detail";
+  }
+  if (band === "weak") {
+    return cleanGap ? `weak signal · issue: ${cleanGap}` : "weak signal · improve structure, accuracy, and clarity";
+  }
+  return cleanFeedback || "gathering data…";
+}
+
+function setSignalLegend(activeBand) {
+  ["weak", "medium", "strong"].forEach((band) => {
+    const el = $(`signal${band.charAt(0).toUpperCase()}${band.slice(1)}`);
+    if (!el) return;
+    if (activeBand) {
+      el.dataset.active = band === activeBand ? "true" : "false";
+    } else {
+      delete el.dataset.active;
+    }
+  });
 }
 
 function updateRail(index, contentScore) {
@@ -144,34 +231,60 @@ function updateRail(index, contentScore) {
   items.forEach((li, i) => {
     li.dataset.current = i === index ? "true" : "false";
   });
-  if (index > 0) {
-    const prevDot = items[index - 1].querySelector(".rail-dot");
-    prevDot.dataset.score = contentScore >= 7 ? "high" : contentScore >= 4 ? "mid" : "low";
+  if (contentScore != null) {
+    const dot = items[index].querySelector(".rail-dot");
+    dot.dataset.score = scoreTier(contentScore);
+  }
+  updateStepper(index, contentScore);
+}
+
+function updateStepper(index, contentScore) {
+  for (let i = 0; i < TOTAL_QUESTIONS; i++) {
+    const step = $(`qStep-${i}`);
+    if (!step) continue;
+    step.dataset.current = i === index ? "true" : "false";
+  }
+  if (contentScore != null) {
+    const step = $(`qStep-${index}`);
+    const tier = scoreTier(contentScore);
+    if (step && tier) {
+      step.dataset.score = tier;
+      step.dataset.done = "true";
+    }
   }
 }
 
-function updateSignalMeter() {
+function updateSignalMeter(latestScore = null, gap = "", feedback = "") {
   const scores = Object.values(state.weakAreas);
   if (scores.length === 0) return;
-  const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
-  const pct = Math.max(0, Math.min(100, (avg / 10) * 100));
+  const scoreForSignal = latestScore ?? scores.reduce((a, b) => a + b, 0) / scores.length;
+  const pct = Math.max(0, Math.min(100, (scoreForSignal / 10) * 100));
   $("signalFill").style.width = `${pct}%`;
 
-  const weakest = Object.entries(state.weakAreas).sort((a, b) => a[1] - b[1])[0];
-  $("signalCaption").textContent = weakest
-    ? `weakest: ${weakest[0]} (${weakest[1].toFixed(1)}/10)`
-    : "gathering data…";
+  const band = signalBand(scoreForSignal);
+  setSignalLegend(band);
+
+  const bandLabel = band ? `${band} signal` : "gathering data…";
+  $("signalCaption").dataset.signal = band || "";
+  $("signalCaption").textContent = band
+    ? signalAdvice(band, gap, feedback)
+    : bandLabel;
 }
 
 /* =========================================================
-   TTS PLAYBACK + waveform (question audio)
+   QUESTION PLAYBACK + waveform
 ========================================================= */
-function playBase64Audio(b64) {
-  const audio = new Audio(`data:audio/wav;base64,${b64}`);
-  animateIdleWave(true);
-  audio.play();
-  audio.onended = () => animateIdleWave(false);
-  return audio;
+function playQuestionAudio(text) {
+  if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return null;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 1;
+  utterance.pitch = 1;
+  utterance.onstart = () => animateIdleWave(true);
+  utterance.onend = () => animateIdleWave(false);
+  utterance.onerror = () => animateIdleWave(false);
+  window.speechSynthesis.speak(utterance);
+  return utterance;
 }
 
 let currentAudio = null;
@@ -181,32 +294,45 @@ async function fetchNextQuestion() {
   $("qText").textContent = "Thinking of your next question…";
   setStatus("live", "GENERATING");
 
-  // Pick weakest topic once we have data, else default rotation
-  const topics = ["background & experience", "core technical skills", "system design",
-                   "past projects", "behavioral / teamwork"];
+  let topic, difficulty;
+  const isFinalQuestion = state.questionIndex === TOTAL_QUESTIONS - 1;
   const weakest = Object.entries(state.weakAreas).sort((a, b) => a[1] - b[1])[0];
-  const topic = weakest ? weakest[0] : topics[state.questionIndex % topics.length];
-  const difficulty = weakest && weakest[1] < 5 ? "hard" : "medium";
-  state.currentTopic = topic;
+
+  if (isFinalQuestion && weakest) {
+    // Final question: revisit the weakest-scoring topic as a harder follow-up
+    topic = weakest[0];
+    difficulty = "hard";
+  } else {
+    difficulty = "medium";
+  }
+  if (topic) state.currentTopic = topic;
+  state.currentDifficulty = difficulty;
+
+  const requestBody = { session_id: state.sessionId, difficulty };
+  if (topic) requestBody.topic = topic;
 
   const res = await fetch(`${API_BASE}/next-question`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: state.sessionId, topic, difficulty }),
+    body: JSON.stringify(requestBody),
   });
   const data = await res.json();
   state.currentQuestion = data.question;
+  state.currentTopic = data.topic ?? state.currentTopic;
+  state.currentDifficulty = data.level ?? state.currentDifficulty;
 
-  $("qTopic").textContent = topic;
+  $("qTopic").textContent = `${state.currentTopic} · ${state.currentDifficulty}`;
   $("qText").textContent = data.question;
   $("questionCounter").textContent = `${state.questionIndex + 1} / ${TOTAL_QUESTIONS}`;
 
-  currentAudio = playBase64Audio(data.audio_base64);
+  currentAudio = playQuestionAudio(data.question);
   setStatus("ready", "LISTENING");
 }
 
 $("replayBtn").addEventListener("click", () => {
-  if (currentAudio) { currentAudio.currentTime = 0; currentAudio.play(); }
+  if (state.currentQuestion) {
+    currentAudio = playQuestionAudio(state.currentQuestion);
+  }
 });
 
 /* =========================================================
@@ -372,22 +498,26 @@ async function submitAnswer(wavBlob) {
   form.append("session_id", state.sessionId);
   form.append("question", state.currentQuestion);
   form.append("topic", state.currentTopic);
+  form.append("difficulty", state.currentDifficulty);
   form.append("audio", wavBlob, "answer.wav");
 
   const res = await fetch(`${API_BASE}/submit-answer`, { method: "POST", body: form });
   const data = await res.json();
 
-  state.weakAreas[state.currentTopic] = data.content_score ?? 5;
+  const contentScore = data.content_score ?? 5;
+  state.weakAreas[state.currentTopic] = contentScore;
   state.history.push({ topic: state.currentTopic, contentScore: data.content_score });
 
   $("scoreContent").textContent = (data.content_score ?? "-") + "/10";
   $("scoreDelivery").textContent = (data.delivery_score ?? "-") + "/10";
+  $("scoreCEFR").textContent = scoreToCEFR(data.content_score);
+  $("feedbackMeta").textContent = `Topic: ${data.topic ?? state.currentTopic} · Level: ${data.level ?? state.currentDifficulty} · CEFR: ${scoreToCEFR(data.content_score)}`;
   $("feedbackText").textContent = data.feedback ?? "";
   $("transcriptText").textContent = `"${data.transcript ?? ""}"`;
   $("feedbackCard").hidden = false;
 
-  updateRail(state.questionIndex, data.content_score ?? 5);
-  updateSignalMeter();
+  updateRail(state.questionIndex, contentScore);
+  updateSignalMeter(contentScore, data.gap ?? "", data.feedback ?? "");
   $("micCaption").textContent = "Tap to answer";
   setStatus("ready", "REVIEWING");
 }
@@ -418,7 +548,24 @@ async function finishSession() {
   fillList("strengthsList", data.strengths);
   fillList("weakList", data.weak_areas);
   fillList("focusList", data.focus_points);
+  renderReviews(data.question_reviews);
   setStatus("ready", "COMPLETE");
+}
+
+function renderReviews(reviews) {
+  const container = $("reviewsList");
+  container.innerHTML = "";
+  (reviews || []).forEach((r) => {
+    const card = document.createElement("div");
+    card.className = "review-card";
+    card.innerHTML = `
+      <p class="review-topic">${r.topic ?? ""}</p>
+      <p class="review-question">${r.question ?? ""}</p>
+      <div class="review-row"><span class="review-icon">→</span><span class="review-text"><strong>Better approach:</strong> ${r.better_approach ?? ""}</span></div>
+      <div class="review-row"><span class="review-icon">◆</span><span class="review-text"><strong>Delivery tip:</strong> ${r.delivery_tip ?? ""}</span></div>
+    `;
+    container.appendChild(card);
+  });
 }
 
 function fillList(id, items) {
@@ -431,4 +578,63 @@ function fillList(id, items) {
   });
 }
 
+async function downloadSummaryAsPDF() {
+  const printBtn = $("printBtn");
+  const originalLabel = printBtn.innerHTML;
+  printBtn.disabled = true;
+  printBtn.innerHTML = "<span>Generating PDF…</span>";
+
+  try {
+    const summaryEl = $("screen-summary");
+
+    // Temporarily hide the action buttons so they don't appear in the capture
+    const actionsEl = document.querySelector(".summary-actions");
+    const prevDisplay = actionsEl.style.display;
+    actionsEl.style.display = "none";
+
+    const canvas = await html2canvas(summaryEl, {
+      backgroundColor: "#12151b",
+      scale: 2,
+      useCORS: true,
+    });
+
+    actionsEl.style.display = prevDisplay;
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: "px", format: "a4" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    const imgData = canvas.toDataURL("image/png");
+
+    if (imgHeight <= pageHeight) {
+      pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
+    } else {
+      // Content taller than one page: slice the canvas across multiple pages
+      let heightLeft = imgHeight;
+      let position = 0;
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      while (heightLeft > 0) {
+        position -= pageHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+    }
+
+    pdf.save(`interview-debrief-${new Date().toISOString().slice(0, 10)}.pdf`);
+  } catch (err) {
+    console.error("PDF generation failed:", err);
+    alert("Couldn't generate the PDF — check the console for details.");
+  } finally {
+    printBtn.disabled = false;
+    printBtn.innerHTML = originalLabel;
+  }
+}
+
+$("printBtn").addEventListener("click", downloadSummaryAsPDF);
 $("restartBtn").addEventListener("click", () => location.reload());

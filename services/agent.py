@@ -68,7 +68,7 @@ FUNCTIONS = [
         "type": "function",
         "function": {
             "name": "generate_summary",
-            "description": "Produce the final session summary: strengths, weak areas, focus points.",
+            "description": "Produce the final session summary: strengths, weak areas, focus points, and per-question coaching on how each answer could have been approached better.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -88,8 +88,15 @@ weak areas that emerge across the session. Always call a function rather
 than answering in plain text; the function calls drive the interview."""
 
 
-def _execute_function(name: str, args: dict, session: dict) -> dict:
-    """Executes the function the model chose to call, using AI Search for grounding."""
+def _execute_function(name: str, args: dict, session: dict, injected_context: str = None) -> dict:
+    """Executes the function the model chose to call, using AI Search for grounding.
+
+    injected_context: for evaluate_answer, the caller (app.py) already knows
+    the real grounding context — pass it here instead of trusting the model
+    to faithfully retype a potentially long string into its own tool-call
+    arguments, which is fragile and previously caused a KeyError when the
+    model omitted the field.
+    """
     if name == "get_next_question":
         context_chunks = search_service.retrieve_context(args["topic"])
         context = "\n---\n".join(context_chunks)
@@ -109,17 +116,32 @@ def _execute_function(name: str, args: dict, session: dict) -> dict:
         return {"question": question_text, "topic": args["topic"], "difficulty": args["difficulty"]}
 
     if name == "evaluate_answer":
+        # Prefer server-injected context (reliable) over the model's own
+        # copy of it (fragile) — fall back to the model's copy only if
+        # nothing was injected, and to an empty string as a last resort
+        # so a missing field never crashes the request.
+        context = injected_context if injected_context is not None else args.get("context", "")
         completion = client.chat.completions.create(
             model=Config.AOAI_DEPLOYMENT,
             messages=[
                 {"role": "system", "content": (
-                    "Evaluate the answer. Return strict JSON: "
+                    "Evaluate the answer using the FULL 0-10 range — do not cluster "
+                    "scores in the middle. Use this rubric for content_score:\n"
+                    "0-2: off-topic, no relevant content\n"
+                    "3-4: partially relevant but vague, missing key details\n"
+                    "5-6: solid, covers fundamentals, but lacks depth or concrete specifics\n"
+                    "7-8: strong — specific, well-structured, shows real hands-on experience\n"
+                    "9-10: exceptional — precise, insightful, clearly differentiates the candidate\n"
+                    "Apply the same full-range logic to delivery_score (clarity, structure, "
+                    "confidence, minimal filler words). A genuinely excellent, detailed, "
+                    "well-organized answer MUST score 8 or above — do not default to 6 "
+                    "out of caution. Return strict JSON: "
                     '{"content_score": 0-10, "delivery_score": 0-10, '
                     '"feedback": "2-3 sentences", "gap": "one specific weakness"}'
                 )},
                 {"role": "user", "content": (
                     f"Question: {args['question']}\nAnswer: {args['answer']}\n"
-                    f"Grounding context: {args['context']}"
+                    f"Grounding context: {context}"
                 )},
             ],
             response_format={"type": "json_object"},
@@ -136,8 +158,19 @@ def _execute_function(name: str, args: dict, session: dict) -> dict:
             model=Config.AOAI_DEPLOYMENT,
             messages=[
                 {"role": "system", "content": (
-                    "Summarize the interview session. Return strict JSON: "
-                    '{"strengths": [...], "weak_areas": [...], "focus_points": [...]}'
+                    "You are coaching a candidate after a mock interview. Summarize the "
+                    "session AND give concrete, actionable coaching for each question — "
+                    "specifically what a stronger answer would have said differently, and "
+                    "one specific speech-delivery tip (pacing, filler words, structure like "
+                    "STAR, confidence signals in phrasing) based on the transcript. Be "
+                    "specific to what was actually said, not generic advice. "
+                    "Return strict JSON: "
+                    '{"strengths": ["..."], "weak_areas": ["..."], "focus_points": ["..."], '
+                    '"question_reviews": [{"topic": "...", "question": "...", '
+                    '"better_approach": "1-2 sentences on what a stronger answer would have '
+                    'covered or how it would be structured differently", '
+                    '"delivery_tip": "1 concrete sentence on delivery, e.g. pacing, filler '
+                    'words, or structure"}]}'
                 )},
                 {"role": "user", "content": args["session_history"]},
             ],
@@ -148,7 +181,26 @@ def _execute_function(name: str, args: dict, session: dict) -> dict:
     raise ValueError(f"Unknown function: {name}")
 
 
-def run_agent_turn(user_message: str, session: dict) -> dict:
+def generate_next_question(topic: str, difficulty: str, session: dict) -> str:
+    """Fast path for the live interview question. Uses one model call instead of the full tool loop."""
+    context_chunks = search_service.retrieve_context(topic)
+    context = "\n---\n".join(context_chunks)
+    completion = client.chat.completions.create(
+        model=Config.AOAI_DEPLOYMENT,
+        messages=[
+            {"role": "system", "content": "Write ONE interview question only, no preamble."},
+            {"role": "user", "content": (
+                f"Topic: {topic}\nDifficulty: {difficulty}\n"
+                f"Candidate background / JD context:\n{context}\n"
+                f"Weak areas so far: {session.get('weak_areas', {})}"
+            )},
+        ],
+        max_tokens=120,
+    )
+    return completion.choices[0].message.content.strip()
+
+
+def run_agent_turn(user_message: str, session: dict, injected_context: str = None) -> dict:
     """
     One turn of the agent loop:
       1. Send conversation + function defs to the model
@@ -156,6 +208,9 @@ def run_agent_turn(user_message: str, session: dict) -> dict:
       3. We execute it (may call AI Search)
       4. Result feeds back to the model for a final natural-language reply
       5. Return both the structured result and the reply for the frontend
+
+    injected_context: passed straight through to _execute_function for
+    evaluate_answer calls — see that function's docstring for why.
     """
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -173,19 +228,23 @@ def run_agent_turn(user_message: str, session: dict) -> dict:
     if not choice.message.tool_calls:
         return {"reply": choice.message.content, "function_result": None}
 
-    tool_call = choice.message.tool_calls[0]
-    func_name = tool_call.function.name
-    func_args = json.loads(tool_call.function.arguments)
+    results = []
+    messages.append(choice.message)
 
-    result = _execute_function(func_name, func_args, session)
+    for tool_call in choice.message.tool_calls:
+        func_name = tool_call.function.name
+        func_args = json.loads(tool_call.function.arguments)
+        result = _execute_function(func_name, func_args, session, injected_context=injected_context)
+        results.append({"name": func_name, "id": tool_call.id, "result": result})
+        messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": json.dumps(result),
+        })
+
+    primary = next((item for item in results if item["name"] == "evaluate_answer"), results[0])
 
     # Feed the result back so the model can phrase a natural response
-    messages.append(choice.message)
-    messages.append({
-        "role": "tool",
-        "tool_call_id": tool_call.id,
-        "content": json.dumps(result),
-    })
     second_pass = client.chat.completions.create(
         model=Config.AOAI_DEPLOYMENT,
         messages=messages,
@@ -193,6 +252,7 @@ def run_agent_turn(user_message: str, session: dict) -> dict:
 
     return {
         "reply": second_pass.choices[0].message.content,
-        "function_called": func_name,
-        "function_result": result,
+        "function_called": [item["name"] for item in results],
+        "function_result": primary["result"],
+        "function_results": results,
     }
