@@ -365,7 +365,7 @@ function drawFrame() {
     } else {
       h = 4 + Math.sin(Date.now() / 900 + i) * 2;
     }
-    const color = waveMode === "recording" ? "#ff5d5d" : waveMode === "tts" ? "#ff9f1c" : "#2a2f3a";
+    const color = waveMode === "recording" ? "#c1544a" : waveMode === "tts" ? "#b08d57" : "#2b3138";
     ctx.fillStyle = color;
     const x = i * barWidth + barWidth * 0.25;
     ctx.fillRect(x, midY - h / 2, barWidth * 0.5, h);
@@ -593,7 +593,7 @@ async function downloadSummaryAsPDF() {
     actionsEl.style.display = "none";
 
     const canvas = await html2canvas(summaryEl, {
-      backgroundColor: "#12151b",
+      backgroundColor: "#0d1013",
       scale: 2,
       useCORS: true,
     });
