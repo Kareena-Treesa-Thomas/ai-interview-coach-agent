@@ -1,4 +1,4 @@
-# 🎙️ AI Interview Coach — Voice-Based Mock Interview Agent
+# 🎙️ AI INTERVIEW COACH – VOICE-BASED MOCK INTERVIEW AGENT
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-ai--interview--coach--agent.azurewebsites.net-22c55e?style=flat-square)](https://ai-interview-coach-agent.azurewebsites.net/)
 [![Demo Video](https://img.shields.io/badge/Demo%20Video-Watch-ff0000?style=flat-square)](https://drive.google.com/file/d/1RSVrr0nEA5eh8GGwYHRvv42Z9ETEOiF3/view?usp=sharing)
