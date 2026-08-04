@@ -2,12 +2,12 @@
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-ai--interview--coach--agent.azurewebsites.net-22c55e?style=flat-square)](https://ai-interview-coach-agent.azurewebsites.net/)
 [![Demo Video](https://img.shields.io/badge/Demo%20Video-Watch-ff0000?style=flat-square)](https://drive.google.com/file/d/1RSVrr0nEA5eh8GGwYHRvv42Z9ETEOiF3/view?usp=sharing)
-[![Azure OpenAI](https://img.shields.io/badge/Azure%20OpenAI-GPT--4o-0078d4?style=flat-square)](https://azure.microsoft.com/en-us/products/ai-services/openai-service)
-[![Azure AI Speech](https://img.shields.io/badge/Azure%20AI-Speech-0078d4?style=flat-square)](https://azure.microsoft.com/en-us/products/ai-services/ai-speech)
-[![Azure AI Search](https://img.shields.io/badge/Azure%20AI-Search-0078d4?style=flat-square)](https://azure.microsoft.com/en-us/products/ai-services/ai-search)
-[![Azure AI Vision](https://img.shields.io/badge/Azure%20AI-Vision-0078d4?style=flat-square)](https://azure.microsoft.com/en-us/products/ai-services/ai-vision)
-[![Deployed on Azure App Service](https://img.shields.io/badge/Azure%20App%20Service-Deployed-0078d4?style=flat-square)](https://azure.microsoft.com/en-us/products/app-service)
-[![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](#license)
+[![Azure OpenAI](https://img.shields.io/badge/Azure%20OpenAI-GPT--4o-a855f7?style=flat-square)](https://azure.microsoft.com/en-us/products/ai-services/openai-service)
+[![Azure AI Speech](https://img.shields.io/badge/Azure%20AI-Speech-ec4899?style=flat-square)](https://azure.microsoft.com/en-us/products/ai-services/ai-speech)
+[![Azure AI Search](https://img.shields.io/badge/Azure%20AI-Search-3b82f6?style=flat-square)](https://azure.microsoft.com/en-us/products/ai-services/ai-search)
+[![Azure AI Vision](https://img.shields.io/badge/Azure%20AI-Vision-06b6d4?style=flat-square)](https://azure.microsoft.com/en-us/products/ai-services/ai-vision)
+[![Deployed on Azure App Service](https://img.shields.io/badge/Azure%20App%20Service-Deployed-f59e0b?style=flat-square)](https://azure.microsoft.com/en-us/products/app-service)
+[![License](https://img.shields.io/badge/License-MIT-fb923c?style=flat-square)](#license)
 
 > Most interview prep tools ask generic questions. This one reads your resume against the actual job description — and asks about the gap between them, live, by voice.
 
